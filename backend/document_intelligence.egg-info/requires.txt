@@ -1,0 +1,5 @@
+beanie
+fastapi
+motor
+pydantic-settings
+uvicorn

@@ -1,0 +1,10 @@
+setup.py
+document_intelligence.egg-info/PKG-INFO
+document_intelligence.egg-info/SOURCES.txt
+document_intelligence.egg-info/dependency_links.txt
+document_intelligence.egg-info/requires.txt
+document_intelligence.egg-info/top_level.txt
+src/__init__.py
+src/main.py
+src/config/__init__.py
+src/config/settings.py
