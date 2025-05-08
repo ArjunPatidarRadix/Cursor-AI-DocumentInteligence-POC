@@ -13,6 +13,25 @@ export interface QuestionResponse {
   answer: string;
   confidence: number;
   success: boolean;
+  model_name: string;
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  description: string;
+  is_default: boolean;
+}
+
+interface ChatMessage {
+  id: string;
+  document_id: string;
+  type: string;
+  content: string;
+  timestamp: string;
+  confidence?: number;
+  success?: boolean;
+  model_name?: string;
 }
 
 const api = {
@@ -50,12 +69,18 @@ const api = {
 
   askQuestion: async (
     documentId: string,
-    question: string
+    question: string,
+    modelId: string
   ): Promise<QuestionResponse> => {
     const response = await axios.post(
       `${API_BASE_URL}/documents/${documentId}/ask`,
-      { question }
+      { question, model_id: modelId }
     );
+    return response.data;
+  },
+
+  listModels: async (): Promise<ModelInfo[]> => {
+    const response = await axios.get(`${API_BASE_URL}/documents/models`);
     return response.data;
   },
 
@@ -64,6 +89,13 @@ const api = {
     if (bytes === 0) return "0 Byte";
     const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)).toString());
     return Math.round(bytes / Math.pow(1024, i)) + " " + sizes[i];
+  },
+
+  getChatHistory: async (documentId: string): Promise<ChatMessage[]> => {
+    const response = await axios.get(
+      `${API_BASE_URL}/documents/${documentId}/chat-history`
+    );
+    return response.data;
   },
 };
 

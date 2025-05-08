@@ -1,17 +1,38 @@
 from transformers import pipeline
 from pathlib import Path
 import pypdf
-from typing import Optional
+from typing import Optional, Dict
+from ..database.models import ModelType
 
 
 class QAService:
     def __init__(self):
-        # Initialize the question-answering pipeline with a suitable model
-        self.qa_pipeline = pipeline(
-            "question-answering",
-            model="deepset/roberta-base-squad2",
-            tokenizer="deepset/roberta-base-squad2",
-        )
+        # Initialize model pipelines
+        self.qa_pipelines: Dict[str, any] = {}
+        self.default_model = "roberta-base-squad2"
+        
+        # Initialize the default pipeline
+        self._load_pipeline(self.default_model)
+
+    def _load_pipeline(self, model_id: str):
+        """Load a model pipeline if not already loaded"""
+        if model_id not in self.qa_pipelines:
+            # Map short model IDs to full HuggingFace model IDs
+            model_map = {
+                "roberta-base-squad2": "deepset/roberta-base-squad2",
+                "distilbert-base-cased-distilled-squad": "distilbert-base-cased-distilled-squad",
+                "bert-large-uncased-whole-word-masking-finetuned-squad": "bert-large-uncased-whole-word-masking-finetuned-squad",
+                "deepset/tinyroberta-squad2": "deepset/tinyroberta-squad2",
+                "distilbert-base-uncased-distilled-squad": "distilbert-base-uncased-distilled-squad",
+                "deepset/minilm-uncased-squad2": "deepset/minilm-uncased-squad2"
+            }
+            
+            full_model_id = model_map.get(model_id, model_id)
+            self.qa_pipelines[model_id] = pipeline(
+                "question-answering",
+                model=full_model_id,
+                tokenizer=full_model_id,
+            )
 
     def extract_text_from_pdf(self, file_path: Path) -> str:
         """Extract text from a PDF file."""
@@ -41,11 +62,20 @@ class QAService:
             except Exception as e:
                 raise Exception(f"Error reading file: {str(e)}")
 
-    def answer_question(self, question: str, context: str) -> dict:
-        """Answer a question based on the given context."""
+    def answer_question(self, question: str, context: str, model_id: Optional[ModelType] = None) -> dict:
+        """Answer a question based on the given context using the specified model."""
         try:
+            # Use specified model or default
+            model_id = model_id or self.default_model
+            
+            # Load the model pipeline if not already loaded
+            self._load_pipeline(model_id)
+            
+            # Get the pipeline for the specified model
+            qa_pipeline = self.qa_pipelines[model_id]
+            
             # Use the QA pipeline to get the answer
-            result = self.qa_pipeline(
+            result = qa_pipeline(
                 question=question,
                 context=context,
                 max_answer_length=100,

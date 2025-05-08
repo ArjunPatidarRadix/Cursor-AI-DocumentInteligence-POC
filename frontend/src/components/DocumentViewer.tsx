@@ -13,32 +13,43 @@ import {
   ListItemButton,
   CircularProgress,
   InputAdornment,
-  Alert,
+  Divider,
+  Tooltip,
 } from "@mui/material";
 import { useState, useEffect } from "react";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import SearchIcon from "@mui/icons-material/Search";
 import SendIcon from "@mui/icons-material/Send";
+import PersonIcon from "@mui/icons-material/Person";
+import SmartToyIcon from "@mui/icons-material/SmartToy";
 import api from "../services/api";
-import type { Document, QuestionResponse } from "../services/api";
+import type { Document, ModelInfo } from "../services/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { debounce } from "lodash";
+
+interface ChatMessage {
+  id: string;
+  type: "question" | "answer";
+  content: string;
+  confidence?: number;
+  success?: boolean;
+  timestamp: Date;
+  model_name?: string;
+}
 
 interface DocumentViewerProps {
   file?: File;
 }
 
 const DocumentViewer = ({ file }: DocumentViewerProps) => {
-  const [aiModel, setAiModel] = useState(
-    "HF - roberta-base-squad2 (Open Source)"
-  );
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
     null
   );
   const [documentUrl, setDocumentUrl] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<QuestionResponse | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isAsking, setIsAsking] = useState(false);
   const queryClient = useQueryClient();
 
@@ -48,6 +59,22 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
     queryFn: () =>
       searchQuery ? api.searchDocuments(searchQuery) : api.listDocuments(),
   });
+
+  // Fetch available models
+  const { data: models = [] } = useQuery<ModelInfo[]>({
+    queryKey: ["models"],
+    queryFn: api.listModels,
+  });
+
+  // Set default model when models are loaded
+  useEffect(() => {
+    if (models.length > 0 && !selectedModel) {
+      const defaultModel = models.find((m) => m.is_default);
+      if (defaultModel) {
+        setSelectedModel(defaultModel.id);
+      }
+    }
+  }, [models, selectedModel]);
 
   // Debounced search handler
   const debouncedSearch = debounce((value: string) => {
@@ -94,25 +121,87 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
     uploadFile();
   }, [file, queryClient]);
 
+  // Load chat history when document changes
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      if (selectedDocument) {
+        try {
+          const history = await api.getChatHistory(selectedDocument.id);
+          setChatMessages(
+            history.map((msg) => ({
+              id: msg.id,
+              type: msg.type as "question" | "answer",
+              content: msg.content,
+              timestamp: new Date(msg.timestamp),
+              confidence: msg.confidence,
+              success: msg.success,
+              model_name: msg.model_name,
+            }))
+          );
+        } catch (error) {
+          console.error("Failed to load chat history:", error);
+          setChatMessages([]);
+        }
+      } else {
+        setChatMessages([]);
+      }
+    };
+
+    loadChatHistory();
+  }, [selectedDocument]);
+
+  // Update document selection handler
+  const handleDocumentSelect = async (document: Document) => {
+    setSelectedDocument(document);
+    // Chat history will be loaded by the useEffect above
+  };
+
   const handleQuestionSubmit = async () => {
-    if (!selectedDocument || !question.trim()) return;
+    if (!selectedDocument || !question.trim() || !selectedModel) return;
+
+    // Add user's question to chat
+    const questionMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: "question",
+      content: question.trim(),
+      timestamp: new Date(),
+      model_name: selectedModel,
+    };
+    setChatMessages((prev) => [...prev, questionMessage]);
 
     setIsAsking(true);
-    setAnswer(null);
+    setQuestion(""); // Clear input after sending
 
     try {
       const response = await api.askQuestion(
         selectedDocument.id,
-        question.trim()
+        question.trim(),
+        selectedModel
       );
-      setAnswer(response);
+
+      // Add AI's answer to chat
+      const answerMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: "answer",
+        content: response.answer,
+        confidence: response.confidence,
+        success: response.success,
+        timestamp: new Date(),
+        model_name: response.model_name,
+      };
+      setChatMessages((prev) => [...prev, answerMessage]);
     } catch (error) {
       console.error("Failed to get answer:", error);
-      setAnswer({
-        answer: "Failed to get an answer. Please try again.",
-        confidence: 0,
+      // Add error message to chat
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: "answer",
+        content: "Failed to get an answer. Please try again.",
         success: false,
-      });
+        timestamp: new Date(),
+        model_name: selectedModel,
+      };
+      setChatMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsAsking(false);
     }
@@ -156,7 +245,7 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
+                  <SearchIcon />
                 </InputAdornment>
               ),
             }}
@@ -167,40 +256,23 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
             <Box sx={{ display: "flex", justifyContent: "center", p: 2 }}>
               <CircularProgress size={24} />
             </Box>
-          ) : documents.length > 0 ? (
+          ) : (
             documents.map((doc) => (
               <ListItem key={doc.id} disablePadding>
                 <ListItemButton
                   selected={selectedDocument?.id === doc.id}
-                  onClick={() => setSelectedDocument(doc)}
-                  sx={{
-                    borderBottom: "1px solid #f0f0f0",
-                    "&.Mui-selected": {
-                      backgroundColor: "#f0f7ff",
-                    },
-                  }}
+                  onClick={() => handleDocumentSelect(doc)}
                 >
-                  <ListItemIcon sx={{ minWidth: 40 }}>
-                    <InsertDriveFileIcon color="primary" />
+                  <ListItemIcon>
+                    <InsertDriveFileIcon />
                   </ListItemIcon>
                   <ListItemText
                     primary={doc.file_name}
                     secondary={api.formatFileSize(doc.file_size)}
-                    primaryTypographyProps={{
-                      fontSize: "0.875rem",
-                      fontWeight: selectedDocument?.id === doc.id ? 600 : 400,
-                    }}
-                    secondaryTypographyProps={{
-                      fontSize: "0.75rem",
-                    }}
                   />
                 </ListItemButton>
               </ListItem>
             ))
-          ) : (
-            <Box sx={{ p: 2, textAlign: "center", color: "text.secondary" }}>
-              No documents found
-            </Box>
           )}
         </List>
       </Box>
@@ -250,72 +322,117 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
 
       {/* Right Panel - AI Assistant */}
       <Box
-        sx={{ width: 400, borderLeft: "1px solid #e0e0e0", bgcolor: "#fff" }}
+        sx={{
+          width: 400,
+          borderLeft: "1px solid #e0e0e0",
+          bgcolor: "#fff",
+          display: "flex",
+          flexDirection: "column",
+        }}
       >
         <Box sx={{ p: 2, borderBottom: "1px solid #e0e0e0" }}>
           <Typography variant="h6" gutterBottom>
             AI Assistant
           </Typography>
           <Select
-            value={aiModel}
-            onChange={(e) => setAiModel(e.target.value)}
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
             size="small"
             fullWidth
-            disabled
           >
-            <MenuItem value="HF - roberta-base-squad2 (Open Source)">
-              HF - roberta-base-squad2 (Open Source)
-            </MenuItem>
+            {models.map((model) => (
+              <MenuItem key={model.id} value={model.id}>
+                <Tooltip title={model.description} placement="right">
+                  <Box>
+                    <Typography variant="body2">{model.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {model.description}
+                    </Typography>
+                  </Box>
+                </Tooltip>
+              </MenuItem>
+            ))}
           </Select>
         </Box>
 
-        <Box sx={{ p: 2 }}>
-          <Box sx={{ mb: 2 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              sx={{ mr: 1, mb: 1 }}
-              onClick={() => {
-                setQuestion("What is the contract title?");
-                handleQuestionSubmit();
+        {/* Chat Messages */}
+        <Box sx={{ flex: 1, overflow: "auto", p: 2 }}>
+          {chatMessages.map((message) => (
+            <Box
+              key={message.id}
+              sx={{
+                display: "flex",
+                mb: 2,
+                flexDirection:
+                  message.type === "question" ? "row" : "row-reverse",
               }}
             >
-              What is the contract title?
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              sx={{ mr: 1, mb: 1 }}
-              onClick={() => {
-                setQuestion("What is the contract type?");
-                handleQuestionSubmit();
-              }}
-            >
-              What is the contract type?
-            </Button>
-          </Box>
-
-          {answer && (
-            <Box sx={{ mb: 2 }}>
-              <Alert
-                severity={answer.success ? "success" : "info"}
-                sx={{ mb: 1 }}
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 1,
+                  maxWidth: "80%",
+                }}
               >
-                {answer.answer}
-                {answer.success && (
-                  <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                    Confidence: {(answer.confidence * 100).toFixed(1)}%
-                  </Typography>
+                {message.type === "question" ? (
+                  <PersonIcon color="primary" />
+                ) : (
+                  <SmartToyIcon color="secondary" />
                 )}
-              </Alert>
+                <Paper
+                  elevation={1}
+                  sx={{
+                    p: 1.5,
+                    bgcolor:
+                      message.type === "question" ? "#f5f5f5" : "#e3f2fd",
+                    borderRadius: 2,
+                  }}
+                >
+                  <Typography variant="body2">{message.content}</Typography>
+                  {message.type === "answer" && message.success && (
+                    <>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: "block",
+                          mt: 0.5,
+                          color: "text.secondary",
+                        }}
+                      >
+                        Confidence: {(message.confidence! * 100).toFixed(1)}%
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: "block",
+                          color: "text.secondary",
+                        }}
+                      >
+                        Model: {message.model_name}
+                      </Typography>
+                    </>
+                  )}
+                </Paper>
+              </Box>
+            </Box>
+          ))}
+          {isAsking && (
+            <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
+              <CircularProgress size={20} />
             </Box>
           )}
+        </Box>
 
+        <Divider />
+
+        {/* Question Input */}
+        <Box sx={{ p: 2 }}>
           <Box sx={{ display: "flex", gap: 1 }}>
             <TextField
               fullWidth
               multiline
-              rows={4}
+              rows={2}
               placeholder="Ask a question about the document..."
               variant="outlined"
               size="small"

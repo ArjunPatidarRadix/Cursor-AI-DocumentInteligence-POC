@@ -1,25 +1,71 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse, FileResponse
-from ..database.models import DocumentModel, DocumentResponse
+from ..database.models import (
+    DocumentModel,
+    DocumentResponse,
+    ChatMessage,
+    ChatMessageResponse,
+    ModelType,
+    ModelInfo
+)
 from ..config.settings import get_settings
 from ..services.qa_service import qa_service
 from ..services.document_service import document_service
 from pydantic import BaseModel
 from pathlib import Path
 from typing import List
+from datetime import datetime
 
 router = APIRouter()
 settings = get_settings()
 
 
+# Available models configuration
+AVAILABLE_MODELS = [
+    ModelInfo(
+        id="roberta-base-squad2",
+        name="RoBERTa Base SQuAD2",
+        description="Robust and well-balanced model for question answering",
+        is_default=True
+    ),
+    ModelInfo(
+        id="distilbert-base-cased-distilled-squad",
+        name="DistilBERT SQuAD",
+        description="Lightweight and fast model with good accuracy",
+    ),
+    ModelInfo(
+        id="bert-large-uncased-whole-word-masking-finetuned-squad",
+        name="BERT Large SQuAD",
+        description="Large model with high accuracy but slower inference",
+    ),
+    ModelInfo(
+        id="deepset/tinyroberta-squad2",
+        name="Tiny RoBERTa SQuAD2",
+        description="Very lightweight model for fast inference",
+    ),
+    ModelInfo(
+        id="distilbert-base-uncased-distilled-squad",
+        name="DistilBERT Base Uncased SQuAD",
+        description="Efficient and lightweight model optimized for speed",
+    ),
+    ModelInfo(
+        id="deepset/minilm-uncased-squad2",
+        name="MiniLM Uncased SQuAD2",
+        description="Compact and efficient model with good performance trade-off",
+    ),
+]
+
+
 class QuestionRequest(BaseModel):
     question: str
+    model_id: ModelType
 
 
 class QuestionResponse(BaseModel):
     answer: str
     confidence: float
     success: bool
+    model_name: str
 
 
 @router.post("/upload", response_model=DocumentResponse)
@@ -56,11 +102,20 @@ async def search_documents(query: str = Query(..., min_length=1)):
     return await document_service.search_documents(query)
 
 
+@router.get("/models", response_model=List[ModelInfo])
+async def list_models():
+    """List all available LLM models"""
+    return AVAILABLE_MODELS
+
+
 @router.post("/{document_id}/ask", response_model=QuestionResponse)
 async def ask_question(document_id: str, request: QuestionRequest):
     try:
         # Get the document
-        document = await document_service.get_document(document_id)
+        document = await DocumentModel.get(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
         file_path = Path(document.file_path)
         
         if not file_path.exists():
@@ -74,14 +129,66 @@ async def ask_question(document_id: str, request: QuestionRequest):
                 status_code=500, detail=f"Error extracting text: {str(e)}"
             )
 
-        # Get the answer
-        result = qa_service.answer_question(request.question, document_text)
+        # Get the answer using the specified model
+        result = qa_service.answer_question(
+            request.question,
+            document_text,
+            model_id=request.model_id
+        )
+
+        # Save question to chat history
+        question_message = ChatMessage(
+            document_id=document_id,
+            type="question",
+            content=request.question,
+            timestamp=datetime.utcnow(),
+            model_name=request.model_id
+        )
+        await question_message.insert()
+
+        # Save answer to chat history
+        answer_message = ChatMessage(
+            document_id=document_id,
+            type="answer",
+            content=result["answer"],
+            confidence=result["confidence"],
+            success=result["success"],
+            timestamp=datetime.utcnow(),
+            model_name=request.model_id
+        )
+        await answer_message.insert()
 
         return QuestionResponse(
             answer=result["answer"],
             confidence=result["confidence"],
             success=result["success"],
+            model_name=request.model_id
         )
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/chat-history", response_model=List[ChatMessageResponse])
+async def get_chat_history(document_id: str):
+    try:
+        # Get all chat messages for the document, sorted by timestamp
+        messages = await ChatMessage.find(
+            ChatMessage.document_id == document_id
+        ).sort("+timestamp").to_list()
+        
+        return [
+            ChatMessageResponse(
+                id=str(msg.id),
+                document_id=msg.document_id,
+                type=msg.type,
+                content=msg.content,
+                timestamp=msg.timestamp,
+                confidence=msg.confidence,
+                success=msg.success,
+                model_name=msg.model_name
+            )
+            for msg in messages
+        ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

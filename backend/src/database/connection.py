@@ -1,7 +1,7 @@
 import motor.motor_asyncio
 from beanie import init_beanie
 from ..config.settings import get_settings
-from .models import DocumentModel
+from .models import DocumentModel, ChatMessage
 
 settings = get_settings()
 
@@ -12,5 +12,6 @@ async def init_db():
 
     # Initialize beanie with the Product document class
     await init_beanie(
-        database=client[settings.DATABASE_NAME], document_models=[DocumentModel]
+        database=client[settings.DATABASE_NAME],
+        document_models=[DocumentModel, ChatMessage]
     )
