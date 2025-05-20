@@ -72,20 +72,21 @@ class QAService:
             self._load_pipeline(model_id)
             
             # Get the pipeline for the specified model
+            print(f"Using model: {model_id}")
             qa_pipeline = self.qa_pipelines[model_id]
             
             # Use the QA pipeline to get the answer
             result = qa_pipeline(
                 question=question,
                 context=context,
-                max_answer_length=100,
-                max_seq_length=512,
-                doc_stride=128,
-                handle_impossible_answer=True,
+                # max_answer_length=100,
+                # max_seq_length=512,
+                # doc_stride=128,
+                # handle_impossible_answer=True,
             )
 
             # Check if the model is confident about the answer
-            if result["score"] < 0.1:  # Confidence threshold
+            if result["score"] < 0:  # Confidence threshold
                 return {
                     "answer": "I'm not confident about the answer to this question based on the provided document.",
                     "confidence": result["score"],

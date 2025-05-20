@@ -11,10 +11,12 @@ from ..database.models import (
 from ..config.settings import get_settings
 from ..services.qa_service import qa_service
 from ..services.document_service import document_service
+from ..services.rag_service import rag_service
 from pydantic import BaseModel
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any, Optional
 from datetime import datetime
+from fastapi import BackgroundTasks
 
 router = APIRouter()
 settings = get_settings()
@@ -30,7 +32,7 @@ AVAILABLE_MODELS = [
     ),
     ModelInfo(
         id="distilbert-base-cased-distilled-squad",
-        name="DistilBERT SQuAD",
+        name="DistilBERT Cased SQuAD",
         description="Lightweight and fast model with good accuracy",
     ),
     ModelInfo(
@@ -45,13 +47,18 @@ AVAILABLE_MODELS = [
     ),
     ModelInfo(
         id="distilbert-base-uncased-distilled-squad",
-        name="DistilBERT Base Uncased SQuAD",
-        description="Efficient and lightweight model optimized for speed",
+        name="DistilBERT Uncased SQuAD",
+        description="Lightweight uncased model optimized for speed",
     ),
     ModelInfo(
         id="deepset/minilm-uncased-squad2",
-        name="MiniLM Uncased SQuAD2",
-        description="Compact and efficient model with good performance trade-off",
+        name="MiniLM SQuAD2",
+        description="Compact model with good performance-speed tradeoff",
+    ),
+    ModelInfo(
+        id="microsoft/deberta-v3-base-squad2",
+        name="DeBERTa v3 SQuAD2",
+        description="Advanced model with strong performance",
     ),
 ]
 
@@ -68,14 +75,44 @@ class QuestionResponse(BaseModel):
     model_name: str
 
 
+class RAGSearchRequest(BaseModel):
+    query: str
+    model_id: Optional[ModelType] = None
+
+
+class RAGSearchResponse(BaseModel):
+    answer: str
+    confidence: float
+    sources: List[Dict[str, Any]]
+
+
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...)):
-    return await document_service.upload_document(file)
+    """Upload a new document"""
+    try:
+        return await document_service.upload_document(file)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/list", response_model=List[DocumentResponse])
 async def list_documents():
-    return await document_service.list_documents()
+    """List all documents"""
+    try:
+        documents = await DocumentModel.find_all().to_list()
+        return [
+            DocumentResponse(
+                id=str(doc.id),
+                file_name=doc.file_name,
+                file_size=doc.file_size,
+                uploaded_at=doc.uploaded_at,
+                indexing_status=doc.indexing_status,
+                indexing_error=doc.indexing_error
+            )
+            for doc in documents
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{document_id}/content")
@@ -190,5 +227,15 @@ async def get_chat_history(document_id: str):
             )
             for msg in messages
         ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rag-search", response_model=RAGSearchResponse)
+async def rag_search(request: RAGSearchRequest):
+    """Search across all documents using RAG."""
+    try:
+        result = await rag_service.query_documents(request.query, request.model_id)
+        return RAGSearchResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

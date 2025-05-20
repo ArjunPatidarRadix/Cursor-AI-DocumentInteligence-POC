@@ -41,6 +41,19 @@ interface DocumentViewerProps {
   file?: File;
 }
 
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case "completed":
+      return "success.main";
+    case "failed":
+      return "error.main";
+    case "pending":
+      return "warning.main";
+    default:
+      return "text.primary";
+  }
+};
+
 const DocumentViewer = ({ file }: DocumentViewerProps) => {
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(
@@ -267,7 +280,32 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
                     <InsertDriveFileIcon />
                   </ListItemIcon>
                   <ListItemText
-                    primary={doc.file_name}
+                    primary={
+                      <Box sx={{ display: "flex", alignItems: "center" }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flex: 1,
+                          }}
+                        >
+                          {doc.file_name}
+                        </Typography>
+                        <Tooltip title={doc.indexing_status}>
+                          <Box
+                            sx={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              bgcolor: getStatusColor(doc.indexing_status),
+                              ml: 1,
+                            }}
+                          />
+                        </Tooltip>
+                      </Box>
+                    }
                     secondary={api.formatFileSize(doc.file_size)}
                   />
                 </ListItemButton>
@@ -277,182 +315,235 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
         </List>
       </Box>
 
-      {/* Middle Panel - Document Viewer */}
-      <Box sx={{ flex: 2, display: "flex", flexDirection: "column" }}>
-        <Box sx={{ p: 2, borderBottom: "1px solid #e0e0e0" }}>
-          <Typography variant="h6" gutterBottom>
-            Document Viewer
-          </Typography>
-        </Box>
-        <Box sx={{ flex: 1, p: 2, overflow: "auto" }}>
-          <Paper
-            sx={{
-              height: "100%",
-              bgcolor: "#fff",
-              overflow: "auto",
-            }}
-          >
-            {selectedDocument && documentUrl ? (
-              <iframe
-                src={documentUrl}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  border: "none",
-                  backgroundColor: "#fff",
-                }}
-                title="document-viewer"
-              />
-            ) : (
-              <Box
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "text.secondary",
-                }}
-              >
-                No document selected
-              </Box>
-            )}
-          </Paper>
-        </Box>
-      </Box>
-
-      {/* Right Panel - AI Assistant */}
-      <Box
-        sx={{
-          width: 400,
-          borderLeft: "1px solid #e0e0e0",
-          bgcolor: "#fff",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <Box sx={{ p: 2, borderBottom: "1px solid #e0e0e0" }}>
-          <Typography variant="h6" gutterBottom>
-            AI Assistant
-          </Typography>
-          <Select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            size="small"
-            fullWidth
-          >
-            {models.map((model) => (
-              <MenuItem key={model.id} value={model.id}>
-                <Tooltip title={model.description} placement="right">
-                  <Box>
-                    <Typography variant="body2">{model.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {model.description}
-                    </Typography>
-                  </Box>
-                </Tooltip>
-              </MenuItem>
-            ))}
-          </Select>
-        </Box>
-
-        {/* Chat Messages */}
-        <Box sx={{ flex: 1, overflow: "auto", p: 2 }}>
-          {chatMessages.map((message) => (
-            <Box
-              key={message.id}
+      {/* Middle and Right Panels */}
+      <Box sx={{ flex: 1, display: "flex" }}>
+        {/* Middle Panel - Document Viewer */}
+        <Box sx={{ flex: 2, display: "flex", flexDirection: "column" }}>
+          <Box sx={{ p: 2, borderBottom: "1px solid #e0e0e0" }}>
+            <Typography variant="h6" gutterBottom>
+              Document Viewer
+            </Typography>
+          </Box>
+          <Box sx={{ flex: 1, p: 2, overflow: "auto" }}>
+            <Paper
               sx={{
-                display: "flex",
-                mb: 2,
-                flexDirection:
-                  message.type === "question" ? "row" : "row-reverse",
+                height: "100%",
+                bgcolor: "#fff",
+                overflow: "auto",
               }}
             >
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 1,
-                  maxWidth: "80%",
-                }}
-              >
-                {message.type === "question" ? (
-                  <PersonIcon color="primary" />
-                ) : (
-                  <SmartToyIcon color="secondary" />
-                )}
-                <Paper
-                  elevation={1}
+              {selectedDocument && documentUrl ? (
+                <iframe
+                  src={documentUrl}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    border: "none",
+                    backgroundColor: "#fff",
+                  }}
+                  title="document-viewer"
+                />
+              ) : (
+                <Box
                   sx={{
-                    p: 1.5,
-                    bgcolor:
-                      message.type === "question" ? "#f5f5f5" : "#e3f2fd",
-                    borderRadius: 2,
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "text.secondary",
                   }}
                 >
-                  <Typography variant="body2">{message.content}</Typography>
-                  {message.type === "answer" && message.success && (
-                    <>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          display: "block",
-                          mt: 0.5,
-                          color: "text.secondary",
-                        }}
-                      >
-                        Confidence: {(message.confidence! * 100).toFixed(1)}%
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          display: "block",
-                          color: "text.secondary",
-                        }}
-                      >
-                        Model: {message.model_name}
-                      </Typography>
-                    </>
-                  )}
-                </Paper>
-              </Box>
-            </Box>
-          ))}
-          {isAsking && (
-            <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
-              <CircularProgress size={20} />
-            </Box>
-          )}
+                  No document selected
+                </Box>
+              )}
+            </Paper>
+          </Box>
         </Box>
 
-        <Divider />
-
-        {/* Question Input */}
-        <Box sx={{ p: 2 }}>
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <TextField
-              fullWidth
-              multiline
-              rows={2}
-              placeholder="Ask a question about the document..."
-              variant="outlined"
+        {/* Right Panel - AI Assistant */}
+        <Box
+          sx={{
+            width: 400,
+            borderLeft: "1px solid #e0e0e0",
+            bgcolor: "#fff",
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+            overflow: "hidden",
+          }}
+        >
+          {/* Header */}
+          <Box sx={{ p: 2, borderBottom: "1px solid #e0e0e0", flexShrink: 0 }}>
+            <Typography variant="h6" gutterBottom>
+              AI Assistant
+            </Typography>
+            <Select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
               size="small"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyPress={handleQuestionKeyPress}
-              disabled={!selectedDocument || isAsking}
-            />
-            <Button
-              variant="contained"
-              onClick={handleQuestionSubmit}
-              disabled={!selectedDocument || !question.trim() || isAsking}
-              sx={{ minWidth: "auto", alignSelf: "flex-end" }}
+              fullWidth
             >
-              {isAsking ? (
-                <CircularProgress size={24} color="inherit" />
-              ) : (
-                <SendIcon />
+              {models.map((model) => (
+                <MenuItem key={model.id} value={model.id}>
+                  <Tooltip title={model.description} placement="right">
+                    <Box>
+                      <Typography variant="body2">{model.name}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {model.description}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
+                </MenuItem>
+              ))}
+            </Select>
+          </Box>
+
+          {/* Chat Container */}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              flex: 1,
+              minHeight: 0,
+              overflow: "hidden",
+              position: "relative",
+            }}
+          >
+            {/* Chat Messages */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                overflow: "auto",
+                p: 2,
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                "&::-webkit-scrollbar": {
+                  width: "8px",
+                },
+                "&::-webkit-scrollbar-track": {
+                  background: "#f1f1f1",
+                },
+                "&::-webkit-scrollbar-thumb": {
+                  background: "#888",
+                  borderRadius: "4px",
+                },
+                "&::-webkit-scrollbar-thumb:hover": {
+                  background: "#555",
+                },
+              }}
+            >
+              {chatMessages.map((message) => (
+                <Box
+                  key={message.id}
+                  sx={{
+                    display: "flex",
+                    flexDirection:
+                      message.type === "question" ? "row" : "row-reverse",
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 1,
+                      maxWidth: "80%",
+                    }}
+                  >
+                    {message.type === "question" ? (
+                      <PersonIcon color="primary" />
+                    ) : (
+                      <SmartToyIcon color="secondary" />
+                    )}
+                    <Paper
+                      elevation={1}
+                      sx={{
+                        p: 1.5,
+                        bgcolor:
+                          message.type === "question" ? "#f5f5f5" : "#e3f2fd",
+                        borderRadius: 2,
+                      }}
+                    >
+                      <Typography variant="body2">{message.content}</Typography>
+                      {message.type === "answer" && message.success && (
+                        <>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              display: "block",
+                              mt: 0.5,
+                              color: "text.secondary",
+                            }}
+                          >
+                            Confidence: {(message.confidence! * 100).toFixed(1)}
+                            %
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              display: "block",
+                              color: "text.secondary",
+                            }}
+                          >
+                            Model: {message.model_name}
+                          </Typography>
+                        </>
+                      )}
+                    </Paper>
+                  </Box>
+                </Box>
+              ))}
+              {isAsking && (
+                <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                  <CircularProgress size={20} />
+                </Box>
               )}
-            </Button>
+            </Box>
+
+            {/* Question Input */}
+            <Box
+              sx={{
+                p: 2,
+                borderTop: "1px solid #e0e0e0",
+                bgcolor: "#fff",
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 1,
+              }}
+            >
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={2}
+                  placeholder="Ask a question about the document..."
+                  variant="outlined"
+                  size="small"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyPress={handleQuestionKeyPress}
+                  disabled={!selectedDocument || isAsking}
+                />
+                <Button
+                  variant="contained"
+                  onClick={handleQuestionSubmit}
+                  disabled={!selectedDocument || !question.trim() || isAsking}
+                  sx={{ minWidth: "auto", alignSelf: "flex-end" }}
+                >
+                  {isAsking ? (
+                    <CircularProgress size={24} color="inherit" />
+                  ) : (
+                    <SendIcon />
+                  )}
+                </Button>
+              </Box>
+            </Box>
           </Box>
         </Box>
       </Box>

@@ -1,14 +1,44 @@
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile, BackgroundTasks
 from ..database.models import DocumentModel, DocumentResponse
 from ..config.settings import get_settings
+from .qa_service import qa_service
+from .rag_service import rag_service
+from .background_task_manager import background_task_manager
 from pathlib import Path
 import shutil
 import os
 from typing import List
+import asyncio
 
 settings = get_settings()
 
 class DocumentService:
+    @staticmethod
+    async def _index_document_task(document_id: str) -> None:
+        """The actual indexing task."""
+        document = await DocumentModel.get(document_id)
+        if not document:
+            return
+        await rag_service.index_document(document)
+
+    @staticmethod
+    async def _on_index_complete(task_id: str, _) -> None:
+        """Callback when indexing completes successfully."""
+        document = await DocumentModel.get(task_id)
+        if document:
+            document.indexing_status = "completed"
+            document.indexing_error = None
+            await document.save()
+
+    @staticmethod
+    async def _on_index_error(task_id: str, error: Exception) -> None:
+        """Callback when indexing fails."""
+        document = await DocumentModel.get(task_id)
+        if document:
+            document.indexing_status = "failed"
+            document.indexing_error = str(error)
+            await document.save()
+
     @staticmethod
     async def upload_document(file: UploadFile) -> DocumentResponse:
         try:
@@ -29,22 +59,35 @@ class DocumentService:
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
-            # Extract text content (placeholder - implement actual text extraction)
-            file_text_content = "Placeholder text content"
+            # Extract text content
+            file_text_content = qa_service.extract_text_from_document(file_path)
 
-            # Create document record
+            # Create document record with pending status
             document = await DocumentModel(
                 file_name=file.filename,
                 file_path=str(file_path),
                 file_size=file_size,
                 file_text_content=file_text_content,
+                indexing_status="pending"
             ).insert()
+
+            # Start background indexing task without awaiting it
+            asyncio.create_task(
+                background_task_manager.create_task(
+                    task_id=str(document.id),
+                    coro=DocumentService._index_document_task(str(document.id)),
+                    on_complete=DocumentService._on_index_complete,
+                    on_error=DocumentService._on_index_error
+                )
+            )
 
             return DocumentResponse(
                 id=str(document.id),
                 file_name=document.file_name,
                 file_size=document.file_size,
                 uploaded_at=document.uploaded_at,
+                indexing_status=document.indexing_status,
+                indexing_error=document.indexing_error
             )
 
         except Exception as e:
@@ -60,6 +103,8 @@ class DocumentService:
                     file_name=doc.file_name,
                     file_size=doc.file_size,
                     uploaded_at=doc.uploaded_at,
+                    indexing_status=doc.indexing_status,
+                    indexing_error=doc.indexing_error
                 )
                 for doc in documents
             ]
@@ -86,6 +131,8 @@ class DocumentService:
                     file_name=doc.file_name,
                     file_size=doc.file_size,
                     uploaded_at=doc.uploaded_at,
+                    indexing_status=doc.indexing_status,
+                    indexing_error=doc.indexing_error
                 )
                 for doc in documents
             ]

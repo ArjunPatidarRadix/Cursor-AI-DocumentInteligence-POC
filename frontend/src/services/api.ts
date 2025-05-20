@@ -6,7 +6,9 @@ export interface Document {
   id: string;
   file_name: string;
   file_size: number;
-  uploaded_at: string;
+  uploaded_at: Date;
+  indexing_status: string;
+  indexing_error?: string;
 }
 
 export interface QuestionResponse {
@@ -32,6 +34,16 @@ interface ChatMessage {
   confidence?: number;
   success?: boolean;
   model_name?: string;
+}
+
+export interface SearchResult {
+  answer: string;
+  confidence: number;
+  sources: Array<{
+    id: string;
+    file_name: string;
+    similarity: number;
+  }>;
 }
 
 const api = {
@@ -95,6 +107,14 @@ const api = {
     const response = await axios.get(
       `${API_BASE_URL}/documents/${documentId}/chat-history`
     );
+    return response.data;
+  },
+
+  ragSearch: async (query: string, modelId?: string): Promise<SearchResult> => {
+    const response = await axios.post(`${API_BASE_URL}/documents/rag-search`, {
+      query,
+      model_id: modelId,
+    });
     return response.data;
   },
 };

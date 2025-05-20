@@ -11,6 +11,8 @@ class DocumentModel(Document):
     file_text_content: str
     file_extracted_details: Dict[str, str] = Field(default_factory=dict)
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    indexing_status: str = "pending"  # possible values: pending, completed, failed
+    indexing_error: Optional[str] = None
 
     class Settings:
         name = "documents"
@@ -21,6 +23,8 @@ class DocumentResponse(BaseModel):
     file_name: str
     file_size: int
     uploaded_at: datetime
+    indexing_status: str
+    indexing_error: Optional[str] = None
 
 
 class ChatMessage(Document):
@@ -54,7 +58,8 @@ ModelType = Literal[
     "bert-large-uncased-whole-word-masking-finetuned-squad",
     "deepset/tinyroberta-squad2",
     "distilbert-base-uncased-distilled-squad",
-    "deepset/minilm-uncased-squad2"
+    "deepset/minilm-uncased-squad2",
+    "microsoft/deberta-v3-base-squad2"
 ]
 
 class ModelInfo(BaseModel):

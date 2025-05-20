@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     OPENAI_API_KEY: Optional[str] = None
 
+    # HuggingFace Configuration
+    HUGGINGFACE_TOKEN: Optional[str] = None
+
     # MongoDB Configuration
     MONGODB_URL: str = "mongodb://localhost:27017/document_intelligence"
     DATABASE_NAME: str = "document_intelligence"

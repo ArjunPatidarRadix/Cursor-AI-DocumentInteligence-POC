@@ -18,3 +18,8 @@ transformers==4.36.2
 torch==2.1.2+cpu
 sentencepiece==0.1.99
 pypdf==3.17.1
+huggingface_hub==0.19.4
+sentence-transformers==2.2.2
+chromadb==0.4.24
+tiktoken==1.40.0
+chroma-core==0.4.24
