@@ -11,6 +11,36 @@ export interface Document {
   indexing_error?: string;
 }
 
+export interface DocumentAnalysis {
+  classification: {
+    category: string;
+    confidence: number;
+    all_categories: Record<string, number>;
+  };
+  entities: Record<
+    string,
+    Array<{
+      text: string;
+      start: number;
+      end: number;
+      confidence: number;
+    }>
+  >;
+  summary: {
+    summary: string;
+    original_length: number;
+    summary_length: number;
+    compression_ratio: number;
+  };
+  tables: Array<{
+    table_id: number;
+    data: Record<string, any>[];
+    columns: string[];
+    rows: number;
+    columns_count: number;
+  }>;
+}
+
 export interface QuestionResponse {
   answer: string;
   confidence: number;
@@ -115,6 +145,51 @@ const api = {
       query,
       model_id: modelId,
     });
+    return response.data;
+  },
+
+  getDocumentAnalysis: async (
+    documentId: string
+  ): Promise<DocumentAnalysis> => {
+    const response = await axios.get(
+      `${API_BASE_URL}/documents/${documentId}/analysis`
+    );
+    return response.data;
+  },
+
+  getDocumentEntities: async (
+    documentId: string
+  ): Promise<DocumentAnalysis["entities"]> => {
+    const response = await axios.get(
+      `${API_BASE_URL}/documents/${documentId}/entities`
+    );
+    return response.data;
+  },
+
+  getDocumentSummary: async (
+    documentId: string
+  ): Promise<DocumentAnalysis["summary"]> => {
+    const response = await axios.get(
+      `${API_BASE_URL}/documents/${documentId}/summary`
+    );
+    return response.data;
+  },
+
+  getDocumentTables: async (
+    documentId: string
+  ): Promise<DocumentAnalysis["tables"]> => {
+    const response = await axios.get(
+      `${API_BASE_URL}/documents/${documentId}/tables`
+    );
+    return response.data;
+  },
+
+  getDocumentClassification: async (
+    documentId: string
+  ): Promise<DocumentAnalysis["classification"]> => {
+    const response = await axios.get(
+      `${API_BASE_URL}/documents/${documentId}/classification`
+    );
     return response.data;
   },
 };

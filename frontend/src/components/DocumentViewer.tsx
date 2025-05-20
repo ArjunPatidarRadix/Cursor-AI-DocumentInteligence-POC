@@ -26,6 +26,7 @@ import api from "../services/api";
 import type { Document, ModelInfo } from "../services/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { debounce } from "lodash";
+import DocumentAnalysis from "./DocumentAnalysis";
 
 interface ChatMessage {
   id: string;
@@ -360,7 +361,7 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
           </Box>
         </Box>
 
-        {/* Right Panel - AI Assistant */}
+        {/* Right Panel - AI Assistant and Analysis */}
         <Box
           sx={{
             width: 400,
@@ -416,7 +417,7 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
                 top: 0,
                 left: 0,
                 right: 0,
-                bottom: 0,
+                bottom: 100,
                 overflow: "auto",
                 p: 2,
                 display: "flex",
@@ -437,6 +438,9 @@ const DocumentViewer = ({ file }: DocumentViewerProps) => {
                 },
               }}
             >
+              {selectedDocument && (
+                <DocumentAnalysis documentId={selectedDocument.id} />
+              )}
               {chatMessages.map((message) => (
                 <Box
                   key={message.id}

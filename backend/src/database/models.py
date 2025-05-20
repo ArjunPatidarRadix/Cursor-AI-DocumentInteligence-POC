@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Literal
+from typing import Dict, List, Any, Optional, Literal
 from pydantic import BaseModel, Field
 from datetime import datetime
 from beanie import Document
@@ -9,7 +9,7 @@ class DocumentModel(Document):
     file_path: str
     file_size: int
     file_text_content: str
-    file_extracted_details: Dict[str, str] = Field(default_factory=dict)
+    file_extracted_details: Dict[str, Any] = Field(default_factory=dict)
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
     indexing_status: str = "pending"  # possible values: pending, completed, failed
     indexing_error: Optional[str] = None

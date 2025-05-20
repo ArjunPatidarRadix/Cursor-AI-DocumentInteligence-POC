@@ -86,6 +86,13 @@ class RAGSearchResponse(BaseModel):
     sources: List[Dict[str, Any]]
 
 
+class DocumentAnalysisResponse(BaseModel):
+    classification: Dict[str, Any]
+    entities: Dict[str, List[Dict[str, Any]]]
+    summary: Dict[str, Any]
+    tables: List[Dict[str, Any]]
+
+
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...)):
     """Upload a new document"""
@@ -237,5 +244,57 @@ async def rag_search(request: RAGSearchRequest):
     try:
         result = await rag_service.query_documents(request.query, request.model_id)
         return RAGSearchResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/analysis", response_model=DocumentAnalysisResponse)
+async def get_document_analysis(document_id: str):
+    """Get document analysis results."""
+    try:
+        analysis = await document_service.get_document_analysis(document_id)
+        return analysis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/entities")
+async def get_document_entities(document_id: str):
+    """Get extracted entities from document."""
+    try:
+        analysis = await document_service.get_document_analysis(document_id)
+        print("analysis::", analysis)
+        return analysis["entities"]
+    except Exception as e:
+        print("error::", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/summary")
+async def get_document_summary(document_id: str):
+    """Get document summary."""
+    try:
+        analysis = await document_service.get_document_analysis(document_id)
+        return analysis["summary"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/tables")
+async def get_document_tables(document_id: str):
+    """Get extracted tables from document."""
+    try:
+        analysis = await document_service.get_document_analysis(document_id)
+        return analysis["tables"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/classification")
+async def get_document_classification(document_id: str):
+    """Get document classification."""
+    try:
+        analysis = await document_service.get_document_analysis(document_id)
+        return analysis["classification"]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

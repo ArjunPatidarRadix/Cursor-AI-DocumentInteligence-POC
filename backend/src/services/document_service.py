@@ -3,6 +3,7 @@ from ..database.models import DocumentModel, DocumentResponse
 from ..config.settings import get_settings
 from .qa_service import qa_service
 from .rag_service import rag_service
+from .document_analysis_service import document_analysis_service
 from .background_task_manager import background_task_manager
 from pathlib import Path
 import shutil
@@ -19,6 +20,14 @@ class DocumentService:
         document = await DocumentModel.get(document_id)
         if not document:
             return
+        
+        # Run document analysis
+        try:
+            await document_analysis_service.analyze_document(document)
+        except Exception as e:
+            print(f"Error during document analysis: {str(e)}")
+        
+        # Run RAG indexing
         await rag_service.index_document(document)
 
     @staticmethod
@@ -150,6 +159,21 @@ class DocumentService:
         }
         file_ext = Path(file_name).suffix.lower()
         return content_type_map.get(file_ext, "application/octet-stream")
+
+    @staticmethod
+    async def get_document_analysis(document_id: str) -> dict:
+        """Get document analysis results."""
+        document = await DocumentModel.get(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        if not document.file_extracted_details:
+            raise HTTPException(
+                status_code=400,
+                detail="Document analysis not available. Please wait for indexing to complete."
+            )
+        
+        return document.file_extracted_details
 
 # Create a singleton instance
 document_service = DocumentService() 
