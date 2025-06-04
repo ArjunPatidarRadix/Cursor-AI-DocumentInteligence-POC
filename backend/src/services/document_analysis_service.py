@@ -70,16 +70,57 @@ class DocumentAnalysisService:
         try:
             # Get document text
             doc_text = document.file_text_content
+            logger.info(f"Starting analysis for document: {document.file_name}")
+            logger.info(f"Document text length: {len(doc_text) if doc_text else 0}")
             
-            # Run analysis tasks concurrently
-            tasks = [
-                asyncio.to_thread(self._cached_classify, doc_text),
-                asyncio.to_thread(self._cached_extract_entities, doc_text),
-                asyncio.to_thread(self.generate_summary, doc_text),
-                asyncio.to_thread(self.extract_tables, document.file_path)
-            ]
-            
-            classification, entities, summary, tables = await asyncio.gather(*tasks)
+            if not doc_text:
+                logger.error("Document text content is empty")
+                raise Exception("Document text content is empty")
+
+            # Run analysis tasks sequentially to better track progress
+            try:
+                # Classification
+                logger.info("Starting classification...")
+                classification = await asyncio.to_thread(self._cached_classify, doc_text)
+                logger.info(f"Classification result: {classification}")
+                document.processing_progress["classification"] = 1.0
+                await document.save()
+            except Exception as e:
+                logger.error(f"Error in classification: {str(e)}", exc_info=True)
+                raise Exception(f"Classification failed: {str(e)}")
+
+            try:
+                # Entity extraction
+                logger.info("Starting entity extraction...")
+                entities = await asyncio.to_thread(self._cached_extract_entities, doc_text)
+                logger.info(f"Entity extraction result: {entities}")
+                document.processing_progress["entity_extraction"] = 1.0
+                await document.save()
+            except Exception as e:
+                logger.error(f"Error in entity extraction: {str(e)}", exc_info=True)
+                raise Exception(f"Entity extraction failed: {str(e)}")
+
+            try:
+                # Summary generation
+                logger.info("Starting summary generation...")
+                summary = await asyncio.to_thread(self.generate_summary, doc_text)
+                logger.info(f"Summary result: {summary}")
+                document.processing_progress["summarization"] = 1.0
+                await document.save()
+            except Exception as e:
+                logger.error(f"Error in summary generation: {str(e)}", exc_info=True)
+                raise Exception(f"Summary generation failed: {str(e)}")
+
+            try:
+                # Table extraction
+                logger.info("Starting table extraction...")
+                tables = await asyncio.to_thread(self.extract_tables, document.file_path)
+                logger.info(f"Table extraction result: {tables}")
+                document.processing_progress["table_extraction"] = 1.0
+                await document.save()
+            except Exception as e:
+                logger.error(f"Error in table extraction: {str(e)}", exc_info=True)
+                raise Exception(f"Table extraction failed: {str(e)}")
             
             # Update document with analysis results
             document.file_extracted_details = {
@@ -94,12 +135,15 @@ class DocumentAnalysisService:
             return document.file_extracted_details
             
         except Exception as e:
-            logger.error(f"Error analyzing document {document.file_name}: {str(e)}")
+            logger.error(f"Error analyzing document {document.file_name}: {str(e)}", exc_info=True)
             raise Exception(f"Error analyzing document: {str(e)}")
 
     def classify_document(self, text: str) -> Dict[str, Any]:
         """Classify document into predefined categories."""
         try:
+            if not text:
+                raise ValueError("Input text is empty")
+
             # Prepare text for classification
             text = text[:512]  # Limit text length for classification
             
@@ -124,6 +168,9 @@ class DocumentAnalysisService:
     def extract_entities(self, text: str) -> Dict[str, List[Dict[str, Any]]]:
         """Extract named entities from document."""
         try:
+            if not text:
+                raise ValueError("Input text is empty")
+
             # Process text with spaCy
             doc = self.nlp(text)
             
@@ -149,6 +196,9 @@ class DocumentAnalysisService:
     def generate_summary(self, text: str) -> Dict[str, Any]:
         """Generate document summary."""
         try:
+            if not text:
+                raise ValueError("Input text is empty")
+
             # Split text into chunks if too long
             max_chunk_length = 1024
             chunks = [text[i:i + max_chunk_length] 
@@ -186,6 +236,9 @@ class DocumentAnalysisService:
     def extract_tables(self, file_path: str) -> List[Dict[str, Any]]:
         """Extract tables from document."""
         try:
+            if not file_path:
+                raise ValueError("File path is empty")
+
             # Check if file is PDF
             if not file_path.lower().endswith('.pdf'):
                 return []
@@ -241,7 +294,7 @@ class DocumentAnalysisService:
             
         except Exception as e:
             logger.error(f"Error extracting tables: {str(e)}")
-            return []  # Return empty list instead of raising exception
+            raise Exception(f"Error extracting tables: {str(e)}")
 
 # Create singleton instance
 document_analysis_service = DocumentAnalysisService() 

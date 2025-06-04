@@ -93,6 +93,15 @@ class DocumentAnalysisResponse(BaseModel):
     tables: List[Dict[str, Any]]
 
 
+class ProcessingProgressResponse(BaseModel):
+    document_id: str
+    file_name: str
+    indexing_status: str
+    indexing_error: Optional[str]
+    processing_progress: Dict[str, float]
+    processing_retries: Dict[str, int]
+
+
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...)):
     """Upload a new document"""
@@ -296,5 +305,25 @@ async def get_document_classification(document_id: str):
     try:
         analysis = await document_service.get_document_analysis(document_id)
         return analysis["classification"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/processing-progress", response_model=ProcessingProgressResponse)
+async def get_processing_progress(document_id: str):
+    """Get document processing progress."""
+    try:
+        document = await DocumentModel.get(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        return ProcessingProgressResponse(
+            document_id=str(document.id),
+            file_name=document.file_name,
+            indexing_status=document.indexing_status,
+            indexing_error=document.indexing_error,
+            processing_progress=document.processing_progress,
+            processing_retries=document.processing_retries
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -8,35 +8,137 @@ from .background_task_manager import background_task_manager
 from pathlib import Path
 import shutil
 import os
-from typing import List
+from typing import List, Dict, Any
 import asyncio
+import logging
+from datetime import datetime
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 class DocumentService:
+    # Allowed file types and their max sizes (in bytes)
+    ALLOWED_EXTENSIONS = {'.pdf', '.doc', '.docx', '.txt', '.html'}
+    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
+    @staticmethod
+    async def validate_document(file: UploadFile) -> None:
+        """Validate document before processing."""
+        # Check file extension
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in DocumentService.ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File type not allowed. Supported types: {', '.join(DocumentService.ALLOWED_EXTENSIONS)}"
+            )
+
+        # Check file size
+        file.file.seek(0, 2)  # Seek to end
+        file_size = file.file.tell()
+        file.file.seek(0)  # Reset file pointer
+
+        if file_size > DocumentService.MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size: {DocumentService.MAX_FILE_SIZE / (1024 * 1024)}MB"
+            )
+
+    @staticmethod
+    async def _update_processing_progress(document: DocumentModel, step: str, progress: float) -> None:
+        """Update processing progress for a specific step."""
+        document.processing_progress[step] = progress
+        await document.save()
+
+    @staticmethod
+    async def _handle_processing_error(document: DocumentModel, step: str, error: Exception) -> None:
+        """Handle processing errors with retry mechanism."""
+        document.processing_retries[step] += 1
+        retries = document.processing_retries[step]
+
+        if retries >= document.max_retries:
+            document.indexing_status = "failed"
+            document.indexing_error = f"Failed to process {step} after {retries} attempts: {str(error)}"
+            logger.error(f"Processing failed for document {document.file_name}: {str(error)}")
+        else:
+            logger.warning(f"Retrying {step} for document {document.file_name} (attempt {retries})")
+            # Schedule retry
+            await asyncio.sleep(2 ** retries)  # Exponential backoff
+            await DocumentService._index_document_task(str(document.id))
+
+        await document.save()
+
     @staticmethod
     async def _index_document_task(document_id: str) -> None:
-        """The actual indexing task."""
+        """The actual indexing task with enhanced error handling and progress tracking."""
         document = await DocumentModel.get(document_id)
         if not document:
             return
-        
-        # Run document analysis
+
         try:
-            await document_analysis_service.analyze_document(document)
+            document.indexing_status = "processing"
+            await document.save()
+
+            # Text extraction
+            try:
+                await DocumentService._update_processing_progress(document, "text_extraction", 0.2)
+                document.file_text_content = qa_service.extract_text_from_document(document.file_path)
+                await DocumentService._update_processing_progress(document, "text_extraction", 1.0)
+            except Exception as e:
+                await DocumentService._handle_processing_error(document, "text_extraction", e)
+                return
+
+            # Document analysis
+            try:
+                analysis_tasks = [
+                    ("classification", 0.3),
+                    ("entity_extraction", 0.4),
+                    ("table_extraction", 0.5),
+                    ("summarization", 0.6)
+                ]
+
+                for step, progress in analysis_tasks:
+                    await DocumentService._update_processing_progress(document, step, progress)
+
+                analysis_results = await document_analysis_service.analyze_document(document)
+                document.file_extracted_details = analysis_results
+
+                for step, _ in analysis_tasks:
+                    await DocumentService._update_processing_progress(document, step, 1.0)
+
+            except Exception as e:
+                await DocumentService._handle_processing_error(document, "document_analysis", e)
+                return
+
+            # RAG indexing
+            try:
+                await DocumentService._update_processing_progress(document, "rag_indexing", 0.7)
+                await rag_service.index_document(document)
+                await DocumentService._update_processing_progress(document, "rag_indexing", 1.0)
+            except Exception as e:
+                await DocumentService._handle_processing_error(document, "rag_indexing", e)
+                return
+
+            # Mark as completed
+            document.indexing_status = "completed"
+            document.indexing_error = None
+            await document.save()
+
+            logger.info(f"Document processing completed successfully for {document.file_name}")
+
         except Exception as e:
-            print(f"Error during document analysis: {str(e)}")
-        
-        # Run RAG indexing
-        await rag_service.index_document(document)
+            logger.error(f"Unexpected error during document processing: {str(e)}")
+            document.indexing_status = "failed"
+            document.indexing_error = f"Unexpected error: {str(e)}"
+            await document.save()
 
     @staticmethod
     async def _on_index_complete(task_id: str, _) -> None:
         """Callback when indexing completes successfully."""
         document = await DocumentModel.get(task_id)
         if document:
-            document.indexing_status = "completed"
-            document.indexing_error = None
+            if document.indexing_status != "failed":
+                document.indexing_status = "completed"
+                document.indexing_error = None
             await document.save()
 
     @staticmethod
@@ -50,37 +152,37 @@ class DocumentService:
 
     @staticmethod
     async def upload_document(file: UploadFile) -> DocumentResponse:
+        """Upload and process a document."""
         try:
-            # Validate file size
-            file.file.seek(0, 2)
-            file_size = file.file.tell()
-            file.file.seek(0)
+            # Validate document
+            await DocumentService.validate_document(file)
 
-            if file_size > settings.MAX_FILE_SIZE:
-                raise HTTPException(status_code=400, detail="File too large")
+            # Create upload directory if it doesn't exist
+            upload_dir = Path(settings.UPLOAD_DIR)
+            upload_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create unique filename
-            file_ext = Path(file.filename).suffix
-            unique_filename = f"{Path(file.filename).stem}_{os.urandom(4).hex()}{file_ext}"
-            file_path = settings.get_upload_dir() / unique_filename
+            # Generate unique filename
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            file_name = f"{timestamp}_{file.filename}"
+            file_path = upload_dir / file_name
 
             # Save file
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
-            # Extract text content
-            file_text_content = qa_service.extract_text_from_document(file_path)
+            # Get file size
+            file_size = os.path.getsize(file_path)
 
-            # Create document record with pending status
+            # Create document record
             document = await DocumentModel(
                 file_name=file.filename,
                 file_path=str(file_path),
                 file_size=file_size,
-                file_text_content=file_text_content,
+                file_text_content="",  # Will be populated during processing
                 indexing_status="pending"
             ).insert()
 
-            # Start background indexing task without awaiting it
+            # Start background processing
             asyncio.create_task(
                 background_task_manager.create_task(
                     task_id=str(document.id),
@@ -100,6 +202,7 @@ class DocumentService:
             )
 
         except Exception as e:
+            logger.error(f"Error uploading document: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @staticmethod

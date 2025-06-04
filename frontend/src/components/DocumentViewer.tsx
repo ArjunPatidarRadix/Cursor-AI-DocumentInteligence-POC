@@ -50,6 +50,8 @@ const getStatusColor = (status: string) => {
       return "error.main";
     case "pending":
       return "warning.main";
+    case "processing":
+      return "warning.main";
     default:
       return "text.primary";
   }

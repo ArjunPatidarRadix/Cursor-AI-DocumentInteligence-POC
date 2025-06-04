@@ -3,6 +3,9 @@ from pathlib import Path
 import pypdf
 from typing import Optional, Dict
 from ..database.models import ModelType
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class QAService:
@@ -34,8 +37,9 @@ class QAService:
                 tokenizer=full_model_id,
             )
 
-    def extract_text_from_pdf(self, file_path: Path) -> str:
+    def extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from a PDF file."""
+        file_path = Path(file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -46,20 +50,23 @@ class QAService:
                 for page in pdf_reader.pages:
                     text += page.extract_text() + "\n"
         except Exception as e:
+            logger.error(f"Error extracting text from PDF: {str(e)}")
             raise Exception(f"Error extracting text from PDF: {str(e)}")
 
         return text.strip()
 
-    def extract_text_from_document(self, file_path: Path) -> str:
+    def extract_text_from_document(self, file_path: str) -> str:
         """Extract text from a document based on its extension."""
+        file_path = Path(file_path)
         if file_path.suffix.lower() == ".pdf":
-            return self.extract_text_from_pdf(file_path)
+            return self.extract_text_from_pdf(str(file_path))
         else:
             # For text-based files
             try:
                 with open(file_path, "r", encoding="utf-8") as file:
                     return file.read().strip()
             except Exception as e:
+                logger.error(f"Error reading file: {str(e)}")
                 raise Exception(f"Error reading file: {str(e)}")
 
     def answer_question(self, question: str, context: str, model_id: Optional[ModelType] = None) -> dict:

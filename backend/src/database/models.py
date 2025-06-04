@@ -9,10 +9,27 @@ class DocumentModel(Document):
     file_path: str
     file_size: int
     file_text_content: str
-    file_extracted_details: Dict[str, Any] = Field(default_factory=dict)
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
-    indexing_status: str = "pending"  # possible values: pending, completed, failed
+    indexing_status: str = "pending"  # pending, processing, completed, failed
     indexing_error: Optional[str] = None
+    file_extracted_details: Optional[Dict[str, Any]] = None
+    processing_progress: Dict[str, float] = Field(default_factory=lambda: {
+        "text_extraction": 0.0,
+        "classification": 0.0,
+        "entity_extraction": 0.0,
+        "table_extraction": 0.0,
+        "summarization": 0.0,
+        "rag_indexing": 0.0
+    })
+    processing_retries: Dict[str, int] = Field(default_factory=lambda: {
+        "text_extraction": 0,
+        "classification": 0,
+        "entity_extraction": 0,
+        "table_extraction": 0,
+        "summarization": 0,
+        "rag_indexing": 0
+    })
+    max_retries: int = 3
 
     class Settings:
         name = "documents"
